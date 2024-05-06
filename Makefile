@@ -37,7 +37,7 @@ ifeq (,$(wildcard ./groundingdino_swint_ogc.pth))
 endif
 	docker run --gpus all -it --rm --net=host --privileged \
 	-v /tmp/.X11-unix:/tmp/.X11-unix \
-	-v "${PWD}":/home/appuser/Grounded-Segment-Anything \
+	-v /home/davide/davide_ws/src/Grounded-Localization:/home/appuser/Grounded-Segment-Anything \
 	-e DISPLAY=$DISPLAY \
 	--name=gsa \
 	--ipc=host -it gsa:v0

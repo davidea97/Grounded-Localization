@@ -10,6 +10,15 @@ from segment_anything import sam_model_registry, SamPredictor
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+
+if not torch.cuda.is_available():
+    print("CUDA is not available. Exiting...")
+    exit()
+else:
+    print("CUDA is available.")
+
+print("Using device:", DEVICE)
+
 # GroundingDINO config and checkpoint
 GROUNDING_DINO_CONFIG_PATH = "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
 GROUNDING_DINO_CHECKPOINT_PATH = "./groundingdino_swint_ogc.pth"
