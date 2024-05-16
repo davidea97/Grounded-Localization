@@ -14,7 +14,7 @@ CONFIG_PATH = "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
 CHECKPOINT_PATH = "./groundingdino_swint_ogc.pth"
 DEVICE = "cuda"
 IMAGE_PATH = "assets/demo7.jpg"
-TEXT_PROMPT = "Dark Brown Horse. White horse. Light Brown Horse. Tail."
+TEXT_PROMPT = "Dark Brown Horse. White horse. Light Brown Horse. Tail. Brown Horse head"
 BOX_TRESHOLD = 0.35
 TEXT_TRESHOLD = 0.25
 FP16_INFERENCE = True
@@ -35,7 +35,6 @@ boxes, logits, phrases = predict(
     device=DEVICE,
 )
 
-print("Using device:", DEVICE)
 
 
 annotated_frame = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
