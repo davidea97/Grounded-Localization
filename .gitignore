@@ -139,5 +139,9 @@ EfficientSAM/
 assets/
 groundingdino_swint_ogc.pth.1
 recognize-anything
+data/
+outputs_data/
+segment_anything copy/
+reconstructed_scene.ply
 
 .idea/

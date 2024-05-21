@@ -19,6 +19,9 @@ from segment_anything import sam_model_registry, SamPredictor
 from utils.DatasetILSVRC2017 import ImageDetDataset, SAMImageDetDataset, SAMDataLoader
 import re
 from utils.generic import load_config, print_config
+from tqdm import tqdm
+
+from segment_anything.utils.transforms import ResizeLongestSide
 
 def load_config(config_file):
     with open(config_file, 'r') as f:
@@ -102,43 +105,6 @@ def save_mask_data(output_dir, mask_list, box_list, label_list, base_name):
         json.dump(json_data, f)
 
 
-def process_frame(frame, model, text_prompt, box_threshold, text_threshold, device, predictor, output_dir, frame_count, input_type, base_name):
-    
-    transform = T.Compose([
-        T.RandomResize([800], max_size=1333),
-        T.ToTensor(),
-        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
-    
-    _, image = load_image(frame, transform)
-
-    dino = time.time()
-    boxes_filt, pred_phrases = get_grounding_output(model, image, text_prompt, box_threshold, text_threshold, device)
-    if boxes_filt.nelement() == 0:
-        print("No bounding boxes detected.")
-        return
-
-    image = cv2.cvtColor(cv2.imread(frame), cv2.COLOR_BGR2RGB) if input_type == "image" else frame
-    start = time.time()
-    predictor.set_image(image)
-    H, W = image.shape[:2]
-    scale_tensor = torch.tensor([W, H, W, H], device=device)
-    boxes_filt = boxes_filt * scale_tensor
-    boxes_filt[:, :2] -= boxes_filt[:, 2:] / 2
-    boxes_filt[:, 2:] += boxes_filt[:, :2]
-    transformed_boxes = predictor.transform.apply_boxes_torch(boxes_filt, image.shape[:2]).to(device)
-    
-    total_start_time_sam = time.time()
-    masks, scores, logits_sam = predictor.predict_torch(None, None, transformed_boxes.to(device), multimask_output=False)
-    
-    temp_time = time.time()
-    for idx, mask in enumerate(masks):
-        colored_mask = np.zeros_like(image)
-        colored_mask[mask.cpu().numpy()[0]] = (0, 255, 0)
-        combined_image = cv2.addWeighted(image, 0.7, colored_mask, 0.3, 0)
-    save_mask_data(output_dir, masks, boxes_filt, pred_phrases, base_name)
-    return cv2.cvtColor(combined_image, cv2.COLOR_BGR2RGB)
-
 def get_object_identifier(filepath):
     # Split by '/' to isolate the filename
     filename = filepath.split('/')[-1]
@@ -154,6 +120,45 @@ def extract_image_number(filename):
       return int(match.group(1))
   return None  # In case there's a filename that doesn't match
 
+def prepare_image(image, transform, device):
+    image = transform.apply_image(image)
+    image = torch.as_tensor(image, device=device.device) 
+    return image.permute(2, 0, 1).contiguous()
+
+
+# Function to read a specific row from a text file
+def read_specific_row(file_path, row_number):
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+        if row_number < 1 or row_number > len(lines):
+            raise IndexError("Row number out of range")
+        return lines[row_number - 1].strip()  # Adjust for 1-based index and remove newline character
+
+# Ensure that all other tensors used in the forward pass are also on the same device
+def ensure_same_device(tensor, device):
+    return tensor.to(device) if tensor.device != device else tensor
+
+def check_tensors_on_gpu(batch_input):
+    all_on_gpu = True
+    for item in batch_input:
+        print("Image: ", item['image'].is_cuda)
+        print("Box: ", item['boxes'].is_cuda)
+        print("Original boxes: ", item['original_boxes'].is_cuda)
+        if not (item['image'].is_cuda and item['boxes'].is_cuda and item['original_boxes'].is_cuda):
+            all_on_gpu = False
+            break
+    return all_on_gpu
+
+def move_tensors_to_gpu(batch_input):
+    for item in batch_input:
+        if isinstance(item['image'], torch.Tensor):
+            item['image'] = item['image'].to('cuda')
+        if isinstance(item['boxes'], torch.Tensor):
+            item['boxes'] = item['boxes'].to('cuda')
+        if isinstance(item['original_boxes'], torch.Tensor):
+            item['original_boxes'] = item['original_boxes'].to('cuda')
+    return batch_input
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Grounded-Segment-Anything Demo", add_help=True)
     parser.add_argument('--config', type=str, default='config/grounded_sam_config.yaml', help='Path to configuration file')
@@ -164,34 +169,38 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(config["output_dir"], exist_ok=True)
-    os.makedirs(config["output_dir"] + "/np_masks", exist_ok=True)
     os.makedirs(config["output_dir"] + "/masks", exist_ok=True)
-    os.makedirs(config["output_dir"] + "/orig", exist_ok=True)
     os.makedirs(config["output_dir"] + "/json_masks", exist_ok=True)
 
-
-
-    model = load_model(device=device, checkpoint=config["dino_checkpoint"])
-    sam = sam_model_registry[config["sam_model_type"]](checkpoint=config["sam_checkpoint"]).to(device)
-    predictor = SamPredictor(sam)
+    dino_model = load_model(device=device, checkpoint=config["dino_checkpoint"])
+    sam = sam_model_registry[config["sam_model_type"]](checkpoint=config["sam_checkpoint"])
+    sam = sam.to(device)
+    #predictor = SamPredictor(sam)
 
     base_path = config["input_dir"]
     image_paths = glob(os.path.join(base_path, '*' + config['image_format']))
-    image_paths.sort(key=extract_image_number)
+    image_paths.sort()
+    output_dir = config["output_dir"]
 
     # Dataloader
-    batch_size = config['batch_size']
-    list_path = []
-    sam_image_reader = SAMImageDetDataset(base_path, list_path, category_labels_path, sam)
-    image_loader = SAMDataLoader(sam_image_reader, batch_size=batch_size, shuffle=False)
+    batch_size = config['batch_size']  
+    prepare_list = config['prepare_list']  
 
+    # Output file path
+    output_file_path = "imagenet_paths.txt"
+    if (prepare_list):
 
-    for frame_count, image_path in enumerate(image_paths):
-        base_name = os.path.splitext(os.path.basename(image_path))[0]
-        print("Processing", image_path)
-        total_time = time.time()
-        text_prompt = config['text_prompt']
-        #text_prompt = get_object_identifier(image_path)
-        process_frame(image_path, model, text_prompt, config['box_threshold'], config['text_threshold'], device, predictor, config["output_dir"], frame_count, base_name)
-        print(f"Execution time: {time.time() - total_time} seconds")
-    
+        # Writing the list to the text file
+        with open(output_file_path, 'w') as file:
+            for image_path in image_paths:
+                file.write(f"{image_path}\n")
+
+    box_thresh = config['box_threshold']
+    text_thresh = config['text_threshold']
+    sam_image_reader = SAMImageDetDataset(base_path, output_file_path, sam, box_thresh, text_thresh, dino_model, device)
+    image_loader = SAMDataLoader(sam_image_reader, batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    total_batch = len(sam_image_reader) // batch_size
+    torch.set_grad_enabled(False)
+
+    for idx, batched_input in enumerate(tqdm(image_loader, total=total_batch)):
+        batched_output = sam(batched_input, multimask_output=False)

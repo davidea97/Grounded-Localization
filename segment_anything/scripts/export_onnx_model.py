@@ -6,7 +6,7 @@
 
 import torch
 
-from segment_anything import build_sam, build_sam_vit_b, build_sam_vit_l
+from segment_anything import sam_model_registry
 from segment_anything.utils.onnx import SamOnnxModel
 
 import argparse
@@ -34,8 +34,8 @@ parser.add_argument(
 parser.add_argument(
     "--model-type",
     type=str,
-    default="default",
-    help="In ['default', 'vit_b', 'vit_l']. Which type of SAM model to export.",
+    required=True,
+    help="In ['default', 'vit_h', 'vit_l', 'vit_b']. Which type of SAM model to export.",
 )
 
 parser.add_argument(
@@ -105,12 +105,7 @@ def run_export(
     return_extra_metrics=False,
 ):
     print("Loading model...")
-    if model_type == "vit_b":
-        sam = build_sam_vit_b(checkpoint)
-    elif model_type == "vit_l":
-        sam = build_sam_vit_l(checkpoint)
-    else:
-        sam = build_sam(checkpoint)
+    sam = sam_model_registry[model_type](checkpoint=checkpoint)
 
     onnx_model = SamOnnxModel(
         model=sam,
@@ -149,7 +144,7 @@ def run_export(
         warnings.filterwarnings("ignore", category=torch.jit.TracerWarning)
         warnings.filterwarnings("ignore", category=UserWarning)
         with open(output, "wb") as f:
-            print(f"Exporing onnx model to {output}...")
+            print(f"Exporting onnx model to {output}...")
             torch.onnx.export(
                 onnx_model,
                 tuple(dummy_inputs.values()),
@@ -165,7 +160,9 @@ def run_export(
 
     if onnxruntime_exists:
         ort_inputs = {k: to_numpy(v) for k, v in dummy_inputs.items()}
-        ort_session = onnxruntime.InferenceSession(output)
+        # set cpu provider default
+        providers = ["CPUExecutionProvider"]
+        ort_session = onnxruntime.InferenceSession(output, providers=providers)
         _ = ort_session.run(None, ort_inputs)
         print("Model has successfully been run with ONNXRuntime.")
 

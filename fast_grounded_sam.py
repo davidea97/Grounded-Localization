@@ -186,9 +186,9 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(config["output_dir"], exist_ok=True)
-    os.makedirs(config["output_dir"] + "/np_masks", exist_ok=True)
+    #os.makedirs(config["output_dir"] + "/np_masks", exist_ok=True)
     os.makedirs(config["output_dir"] + "/masks", exist_ok=True)
-    os.makedirs(config["output_dir"] + "/orig", exist_ok=True)
+    #os.makedirs(config["output_dir"] + "/orig", exist_ok=True)
     os.makedirs(config["output_dir"] + "/json_masks", exist_ok=True)
 
     transform = T.Compose([
@@ -203,7 +203,8 @@ if __name__ == "__main__":
 
     if args.input == "image":
         image_paths = glob(os.path.join(config["input_dir"], '*' + config['image_format']))
-        image_paths.sort(key=extract_image_number)
+        #image_paths.sort(key=extract_image_number)
+        image_paths.sort()
 
         for frame_count, image_path in enumerate(image_paths):
             base_name = os.path.splitext(os.path.basename(image_path))[0]
