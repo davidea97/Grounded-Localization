@@ -199,7 +199,7 @@ if __name__ == "__main__":
     os.makedirs(config["output_dir"] + "/json_masks", exist_ok=True)
 
     transform = transforms.Compose([
-        transforms.Resize((300, 300)),  # Fixed size for all images
+        transforms.Resize((400, 400)),  # Fixed size for all images
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])

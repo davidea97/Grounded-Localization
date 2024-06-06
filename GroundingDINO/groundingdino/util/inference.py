@@ -84,6 +84,51 @@ def predict(
 
     return boxes, logits.max(dim=1)[0], phrases
 
+def predict_batch(
+        model,
+        images: List[torch.Tensor],
+        captions: List[str],
+        box_threshold: float,
+        text_threshold: float,
+        device: str = "cuda"
+) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[List[str]]]:
+    model = model.to(device)
+    
+    # Convert list of images to a batch tensor
+    image_batch = torch.stack(images).to(device)
+    processed_captions = [preprocess_caption(caption) for caption in captions]
+    
+    with torch.no_grad():
+        outputs = model(image_batch, captions=processed_captions)
+
+
+    batch_boxes = []
+    batch_logits = []
+    batch_phrases = []
+
+    for i in range(len(images)):
+        prediction_logits = outputs["pred_logits"][i].cpu().sigmoid()  # prediction_logits.shape = (nq, 256)
+        prediction_boxes = outputs["pred_boxes"][i].cpu()  # prediction_boxes.shape = (nq, 4)
+
+        mask = prediction_logits.max(dim=1)[0] > box_threshold
+        logits = prediction_logits[mask]  # logits.shape = (n, 256)
+        boxes = prediction_boxes[mask]  # boxes.shape = (n, 4)
+
+        tokenizer = model.tokenizer
+        tokenized = tokenizer(processed_captions[i])
+
+        phrases = [
+            get_phrases_from_posmap(logit > text_threshold, tokenized, tokenizer).replace('.', '')
+            for logit in logits
+        ]
+
+        batch_boxes.append(boxes)
+        batch_logits.append(logits.max(dim=1)[0])
+        batch_phrases.append(phrases)
+
+    return batch_boxes, batch_logits, batch_phrases
+
+
 
 def annotate(image_source: np.ndarray, boxes: torch.Tensor, logits: torch.Tensor, phrases: List[str]) -> np.ndarray:
     h, w, _ = image_source.shape

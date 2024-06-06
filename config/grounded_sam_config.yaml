@@ -2,14 +2,13 @@ sam_checkpoint: sam_models/sam_vit_b_01ec64.pth
 dino_checkpoint: dino_models/groundingdino_swint_ogc.pth
 
 sam_model_type: vit_b
-input_dir: imagenet-sample-images
+input_dir: data/lmo
 
-output_dir: outputs_imagenet
-batch_size: 8
-image_format: .JPEG
+output_dir: outputs_lmo
+batch_size: 4
+image_format: .png
 prepare_list: False
 
-text_prompt: handled cup
-
-box_threshold: 0.3
+text_prompt: yellow duck
+box_threshold: 0.4
 text_threshold: 0.25

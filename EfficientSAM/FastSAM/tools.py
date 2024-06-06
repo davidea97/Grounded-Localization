@@ -1,10 +1,13 @@
 import numpy as np
 from PIL import Image
+import matplotlib
+matplotlib.use('Agg')  # Set the backend to Agg
 import matplotlib.pyplot as plt
 import cv2
 import torch
 import os
 import clip
+import math
 
 
 def convert_box_xywh_to_xyxy(box):
@@ -89,13 +92,13 @@ def get_bbox_from_mask(mask):
 
 
 def fast_process(
-    annotations, args, mask_random_color, bbox=None, points=None, edges=False
+    annotations, args, mask_random_color, bbox=None, points=None, edges=False, ori_img=None
 ):
     if isinstance(annotations[0], dict):
         annotations = [annotation["segmentation"] for annotation in annotations]
     result_name = os.path.basename(args.img_path)
     image = cv2.imread(args.img_path)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.cvtColor(ori_img, cv2.COLOR_BGR2RGB)
     original_h = image.shape[0]
     original_w = image.shape[1]
     plt.figure(figsize=(original_w/100, original_h/100))
@@ -160,7 +163,7 @@ def fast_process(
         cv2.drawContours(temp, contour_all, -1, (255, 255, 255), 2)
         color = np.array([0 / 255, 0 / 255, 255 / 255, 0.8])
         contour_mask = temp / 255 * color.reshape(1, 1, -1)
-        plt.imshow(contour_mask)
+        #lt.imshow(contour_mask)
 
     save_path = args.output
     if not os.path.exists(save_path):
@@ -358,10 +361,11 @@ def box_prompt(masks, bbox, target_height, target_width):
             int(bbox[2] * w / target_width),
             int(bbox[3] * h / target_height),
         ]
-    bbox[0] = round(bbox[0]) if round(bbox[0]) > 0 else 0
-    bbox[1] = round(bbox[1]) if round(bbox[1]) > 0 else 0
-    bbox[2] = round(bbox[2]) if round(bbox[2]) < w else w
-    bbox[3] = round(bbox[3]) if round(bbox[3]) < h else h
+
+    bbox[0] = max(0, min(math.floor(bbox[0]), w))
+    bbox[1] = max(0, min(math.floor(bbox[1]), h))
+    bbox[2] = max(0, min(math.ceil(bbox[2]), w))
+    bbox[3] = max(0, min(math.ceil(bbox[3]), h)) 
 
     # IoUs = torch.zeros(len(masks), dtype=torch.float32)
     bbox_area = (bbox[3] - bbox[1]) * (bbox[2] - bbox[0])

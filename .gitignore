@@ -144,4 +144,7 @@ outputs_data/
 segment_anything copy/
 reconstructed_scene.ply
 
+outputs_lab/
+outputs_lmo/
+
 .idea/
